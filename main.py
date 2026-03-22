@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tkinter as tk
 
 import cv2
 import numpy as np
-from PIL import Image, ImageTk
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 
@@ -16,170 +14,198 @@ CASCADE_PATH = BASE_DIR / "haarcascade_frontalface_default.xml"
 
 EMOTION_LABELS = ["Angry", "Disgust", "Fear", "Happy", "Neutral", "Sad", "Surprise"]
 EMOTION_MESSAGES = {
-    "Angry": "Pause, breathe, and let the intensity soften.\nYou are stronger than this moment.",
-    "Disgust": "Trust what you feel, then respond with clarity.\nProtect your peace and move forward.",
-    "Fear": "You are safe in this moment.\nTake one steady step at a time with courage.",
-    "Happy": "Your happiness is contagious. Keep shining!\nMoments like this are precious, so savor them.",
-    "Neutral": "Calmness is a beautiful strength.\nYou are balanced, centered, and doing wonderfully.",
-    "Sad": "It is okay to feel sadness. Treat yourself gently today.\nBetter days are on their way.",
-    "Surprise": "Life's surprises bring unexpected opportunities.\nStay open, stay curious, and embrace the unknown.",
+    "Angry": [
+        "Pause, breathe, and let the intensity soften.",
+        "You are stronger than this moment.",
+    ],
+    "Disgust": [
+        "Trust what you feel, then respond with clarity.",
+        "Protect your peace and move forward.",
+    ],
+    "Fear": [
+        "You are safe in this moment.",
+        "Take one steady step at a time with courage.",
+    ],
+    "Happy": [
+        "Your happiness is contagious. Keep shining!",
+        "Moments like this are precious, so savor them.",
+    ],
+    "Neutral": [
+        "Calmness is a beautiful strength.",
+        "You are balanced, centered, and doing wonderfully.",
+    ],
+    "Sad": [
+        "It is okay to feel sadness. Treat yourself gently today.",
+        "Better days are on their way.",
+    ],
+    "Surprise": [
+        "Life's surprises bring unexpected opportunities.",
+        "Stay open, stay curious, and embrace the unknown.",
+    ],
+    "No face detected": [
+        "Center your face in the frame so the model can read it clearly.",
+    ],
+    "Face found": [
+        "The face is visible, but the frame quality is too low.",
+    ],
 }
 
-WINDOW_BG = "#121212"
-ACCENT = "#00f2b2"
-TEXT_PRIMARY = "#ffffff"
-TEXT_SECONDARY = "#b8b8b8"
-BOX_COLOR = (255, 255, 255)
+WINDOW_TITLE = "Real-Time Face Emotion Detection"
+WINDOW_BG = (18, 18, 18)
+ACCENT = (0, 242, 178)
+WHITE = (255, 255, 255)
+MUTED = (184, 184, 184)
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 480
+CANVAS_WIDTH = 980
+CANVAS_HEIGHT = 760
+FRAME_X = (CANVAS_WIDTH - FRAME_WIDTH) // 2
+FRAME_Y = 96
 
 
-class EmotionApp:
-    def __init__(self) -> None:
-        self.face_classifier = cv2.CascadeClassifier(str(CASCADE_PATH))
-        if self.face_classifier.empty():
-            raise RuntimeError(f"Failed to load Haar cascade from {CASCADE_PATH}")
+def put_centered_text(
+    image: np.ndarray,
+    text: str,
+    center_x: int,
+    y: int,
+    font_scale: float,
+    color: tuple[int, int, int],
+    thickness: int,
+) -> None:
+    (text_width, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
+    x = max(20, center_x - (text_width // 2))
+    cv2.putText(image, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, cv2.LINE_AA)
 
-        self.classifier = load_model(str(MODEL_PATH), compile=False)
-        self.camera = cv2.VideoCapture(0)
-        if not self.camera.isOpened():
-            raise RuntimeError("Could not open the webcam. Close other camera apps and try again.")
 
-        self.root = tk.Tk()
-        self.root.title("Real-Time Face Emotion Detection")
-        self.root.configure(bg=WINDOW_BG)
-        self.root.geometry("980x760")
-        self.root.minsize(900, 700)
-        self.root.protocol("WM_DELETE_WINDOW", self.close)
-
-        self.video_photo: ImageTk.PhotoImage | None = None
-        self.current_emotion = "Waiting for face..."
-
-        self._build_ui()
-        self._update_frame()
-
-    def _build_ui(self) -> None:
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_rowconfigure(1, weight=1)
-
-        header = tk.Label(
-            self.root,
-            text="Real-Time Face Emotion Detector",
-            font=("Segoe UI", 30, "bold"),
-            fg=ACCENT,
-            bg=WINDOW_BG,
-        )
-        header.grid(row=0, column=0, pady=(24, 18))
-
-        self.video_label = tk.Label(
-            self.root,
-            bg=WINDOW_BG,
-            bd=0,
-            highlightthickness=0,
-        )
-        self.video_label.grid(row=1, column=0, padx=24, sticky="n")
-
-        self.emotion_label = tk.Label(
-            self.root,
-            text="You are feeling Waiting...",
-            font=("Segoe UI", 26, "bold"),
-            fg=TEXT_PRIMARY,
-            bg=WINDOW_BG,
-        )
-        self.emotion_label.grid(row=2, column=0, pady=(28, 10))
-
-        self.message_label = tk.Label(
-            self.root,
-            text="Center your face in the camera to begin detection.",
-            font=("Segoe UI", 18),
-            fg=TEXT_SECONDARY,
-            bg=WINDOW_BG,
-            justify="center",
-            wraplength=760,
-        )
-        self.message_label.grid(row=3, column=0, padx=32, pady=(0, 22))
-
-        self.footer_label = tk.Label(
-            self.root,
-            text="Press Q inside the window or close it to exit.",
-            font=("Segoe UI", 11),
-            fg="#7d7d7d",
-            bg=WINDOW_BG,
-        )
-        self.footer_label.grid(row=4, column=0, pady=(0, 18))
-
-        self.root.bind("<KeyPress-q>", lambda _event: self.close())
-        self.root.bind("<KeyPress-Q>", lambda _event: self.close())
-
-    def _predict_emotion(self, frame: np.ndarray) -> tuple[np.ndarray, str, str]:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.face_classifier.detectMultiScale(
-            gray,
-            scaleFactor=1.3,
-            minNeighbors=5,
-            minSize=(48, 48),
+def draw_wrapped_lines(
+    image: np.ndarray,
+    lines: list[str],
+    center_x: int,
+    start_y: int,
+    line_gap: int,
+    font_scale: float,
+    color: tuple[int, int, int],
+    thickness: int,
+) -> None:
+    for index, line in enumerate(lines):
+        put_centered_text(
+            image=image,
+            text=line,
+            center_x=center_x,
+            y=start_y + (index * line_gap),
+            font_scale=font_scale,
+            color=color,
+            thickness=thickness,
         )
 
-        display_frame = frame.copy()
-        emotion = "No face detected"
-        message = "Center your face in the frame so the model can read it clearly."
 
-        if len(faces) == 0:
-            return display_frame, emotion, message
+def build_ui(frame: np.ndarray, emotion: str, message_lines: list[str]) -> np.ndarray:
+    canvas = np.full((CANVAS_HEIGHT, CANVAS_WIDTH, 3), WINDOW_BG, dtype=np.uint8)
+    canvas[FRAME_Y : FRAME_Y + FRAME_HEIGHT, FRAME_X : FRAME_X + FRAME_WIDTH] = frame
 
-        x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
-        cv2.rectangle(display_frame, (x, y), (x + w, y + h), BOX_COLOR, 2)
+    put_centered_text(
+        image=canvas,
+        text="Real-Time Face Emotion Detector",
+        center_x=CANVAS_WIDTH // 2,
+        y=62,
+        font_scale=1.35,
+        color=ACCENT,
+        thickness=3,
+    )
 
-        roi_gray = gray[y : y + h, x : x + w]
-        roi_gray = cv2.resize(roi_gray, (48, 48), interpolation=cv2.INTER_AREA)
+    put_centered_text(
+        image=canvas,
+        text=f"You are feeling {emotion}",
+        center_x=CANVAS_WIDTH // 2,
+        y=630,
+        font_scale=1.05,
+        color=WHITE,
+        thickness=2,
+    )
 
-        if roi_gray.size == 0 or float(np.sum(roi_gray)) == 0.0:
-            return display_frame, "Face found", "The face is visible, but the frame quality is too low."
+    draw_wrapped_lines(
+        image=canvas,
+        lines=message_lines,
+        center_x=CANVAS_WIDTH // 2,
+        start_y=685,
+        line_gap=34,
+        font_scale=0.72,
+        color=MUTED,
+        thickness=2,
+    )
 
-        roi = roi_gray.astype("float32") / 255.0
-        roi = img_to_array(roi)
-        roi = np.expand_dims(roi, axis=0)
+    put_centered_text(
+        image=canvas,
+        text="Press Q to close",
+        center_x=CANVAS_WIDTH // 2,
+        y=742,
+        font_scale=0.48,
+        color=(120, 120, 120),
+        thickness=1,
+    )
 
-        prediction = self.classifier.predict(roi, verbose=0)[0]
-        label = EMOTION_LABELS[int(np.argmax(prediction))]
-        emotion = label
-        message = EMOTION_MESSAGES[label]
+    return canvas
 
-        return display_frame, emotion, message
 
-    def _update_frame(self) -> None:
-        if not self.camera or not self.camera.isOpened():
-            return
+def main() -> None:
+    face_classifier = cv2.CascadeClassifier(str(CASCADE_PATH))
+    if face_classifier.empty():
+        raise RuntimeError(f"Failed to load Haar cascade from {CASCADE_PATH}")
 
-        ok, frame = self.camera.read()
-        if not ok:
-            self.message_label.config(text="Camera frame could not be read. Please restart the app.")
-            self.root.after(120, self._update_frame)
-            return
+    classifier = load_model(str(MODEL_PATH), compile=False)
+    camera = cv2.VideoCapture(0)
+    if not camera.isOpened():
+        raise RuntimeError("Could not open the webcam. Close other camera apps and try again.")
 
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
-        processed_frame, emotion, message = self._predict_emotion(frame)
+    cv2.namedWindow(WINDOW_TITLE, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW_TITLE, CANVAS_WIDTH, CANVAS_HEIGHT)
 
-        image_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image_rgb)
-        self.video_photo = ImageTk.PhotoImage(image=image)
-        self.video_label.config(image=self.video_photo)
+    try:
+        while True:
+            ok, frame = camera.read()
+            if not ok:
+                raise RuntimeError("Camera frame could not be read. Please restart the app.")
 
-        self.current_emotion = emotion
-        self.emotion_label.config(text=f"You are feeling {emotion}")
-        self.message_label.config(text=message)
+            frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_classifier.detectMultiScale(
+                gray,
+                scaleFactor=1.3,
+                minNeighbors=5,
+                minSize=(48, 48),
+            )
 
-        self.root.after(90, self._update_frame)
+            emotion = "No face detected"
+            message_lines = EMOTION_MESSAGES[emotion]
 
-    def close(self) -> None:
-        if self.camera and self.camera.isOpened():
-            self.camera.release()
-        self.root.destroy()
+            if len(faces) > 0:
+                x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
+                cv2.rectangle(frame, (x, y), (x + w, y + h), WHITE, 2)
 
-    def run(self) -> None:
-        self.root.mainloop()
+                roi_gray = gray[y : y + h, x : x + w]
+                roi_gray = cv2.resize(roi_gray, (48, 48), interpolation=cv2.INTER_AREA)
+
+                if roi_gray.size == 0 or float(np.sum(roi_gray)) == 0.0:
+                    emotion = "Face found"
+                    message_lines = EMOTION_MESSAGES[emotion]
+                else:
+                    roi = roi_gray.astype("float32") / 255.0
+                    roi = img_to_array(roi)
+                    roi = np.expand_dims(roi, axis=0)
+
+                    prediction = classifier.predict(roi, verbose=0)[0]
+                    emotion = EMOTION_LABELS[int(np.argmax(prediction))]
+                    message_lines = EMOTION_MESSAGES[emotion]
+
+            ui = build_ui(frame=frame, emotion=emotion, message_lines=message_lines)
+            cv2.imshow(WINDOW_TITLE, ui)
+
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+    finally:
+        camera.release()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    app = EmotionApp()
-    app.run()
+    main()

@@ -9,22 +9,22 @@ The app opens your webcam, detects the largest face in the frame, draws the face
 - `main.py`: local desktop app for webcam-based emotion detection
 - `model.h5`: trained CNN model used for prediction
 - `haarcascade_frontalface_default.xml`: Haar cascade for face detection
-- `emotion-classification-cnn-using-keras.ipynb`: training notebook
 - `outputs/`: sample screenshots of the desired interface/output
-- `app.py`: previous web version kept in the repo, but not needed for the local app
+- `requirements.txt`: Python dependencies for local setup
+- `README.md`: local setup and run instructions
 
 ## Run Locally
 
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+py -3.11 -m pip install -r requirements.txt
 ```
 
 Start the desktop app:
 
 ```bash
-python main.py
+py -3.11 main.py
 ```
 
 Close the app with the window close button or press `Q`.
@@ -33,3 +33,4 @@ Close the app with the window close button or press `Q`.
 
 - `model.h5` is loaded directly from this repository, so keep it in the project root.
 - This project is intended for local use and GitHub upload only. No deployment setup is required.
+- Python 3.11 is the recommended version for this project on Windows.
