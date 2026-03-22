@@ -1,7 +1,3 @@
-@'
 __pycache__/
 *.pyc
 *.log
-archive.zip
-dataset.rar
-'@ | Set-Content -Encoding UTF8 .gitignore
